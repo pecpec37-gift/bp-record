@@ -69,17 +69,50 @@
   .t-normal{background:var(--brand-soft);color:var(--brand);}
   .t-caution{background:#f7efdb;color:var(--caution);}
   .t-high{background:var(--warn-soft);color:var(--warn);}
+  .row-act{display:flex;gap:2px;justify-content:center;white-space:nowrap;}
+  .edit{color:var(--brand);background:none;padding:4px 8px;font-size:.8rem;}
+  .edit:hover{text-decoration:underline;}
   .del{color:var(--warn);background:none;padding:4px 8px;font-size:.8rem;}
   .del:hover{text-decoration:underline;}
   .empty{text-align:center;color:#8a929b;padding:28px 10px;}
   .table-scroll{overflow-x:auto;}
   .note{font-size:.78rem;color:#8a929b;margin-top:8px;}
+  .who-cell{font-size:.82rem;color:#4a5560;}
+  /* 編集中の見た目 */
+  .card.input.editing{border-color:var(--caution);box-shadow:0 0 0 2px #f3e3c2;}
+  .edit-banner{display:none;background:#f7efdb;color:#8a6a12;border-radius:8px;
+    padding:8px 12px;font-size:.85rem;font-weight:600;margin-bottom:12px;
+    align-items:center;justify-content:space-between;gap:10px;}
+  .card.input.editing .edit-banner{display:flex;}
+  .edit-banner button{background:none;color:#8a6a12;text-decoration:underline;padding:2px 4px;font-size:.82rem;}
+  /* 設定パネル */
+  .people-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
+  .person-item{display:flex;align-items:center;gap:8px;background:#fdfcf9;
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;}
+  .person-item .pname{flex:1;font-weight:600;}
+  .person-item .page{color:#8a929b;font-size:.85rem;}
+  .add-person{display:grid;grid-template-columns:2fr 1fr auto;gap:8px;align-items:end;}
+  details.settings summary{cursor:pointer;font-weight:600;color:var(--brand);
+    list-style:none;padding:4px 0;user-select:none;}
+  details.settings summary::-webkit-details-marker{display:none;}
+  details.settings summary::before{content:'⚙ ';}
+  /* モーダル */
+  .modal-bg{position:fixed;inset:0;background:rgba(28,39,51,.5);display:none;
+    align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .modal-bg.open{display:flex;}
+  .modal{background:#fff;border-radius:14px;max-width:440px;width:100%;
+    padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.25);}
+  .modal h3{margin:0 0 12px;color:var(--brand);}
+  .modal ul{margin:0 0 16px;padding-left:1.2em;}
+  .modal li{margin-bottom:8px;font-size:.9rem;}
+  .modal .close-row{text-align:right;}
   @media(max-width:560px){
     .grid{grid-template-columns:1fr;}
-    td.memo{max-width:110px;}
+    td.memo{max-width:90px;}
+    .add-person{grid-template-columns:1fr;}
   }
   @media print{
-    header,.card.input,.toolbar .actions,.del,.note{display:none!important;}
+    header .who,.card.input,.toolbar .actions,.row-act,.note,details.settings{display:none!important;}
     body{background:#fff;}
     .card{box-shadow:none;border:none;padding:0;}
     th{position:static;}
@@ -89,14 +122,44 @@
 <body>
 <header>
   <h1>血圧記録ノート</h1>
-  <div class="who">富田祥之さん（64歳）</div>
+  <div class="who" id="headerWho">測定者を登録してください</div>
 </header>
 
 <div class="wrap">
+  <!-- 設定：測定者の登録 -->
+  <section class="card">
+    <details class="settings" id="settings">
+      <summary>初期設定（測定者の登録）</summary>
+      <div style="margin-top:12px">
+        <div class="people-list" id="peopleList"></div>
+        <div class="add-person">
+          <div class="field">
+            <label for="pName">お名前</label>
+            <input type="text" id="pName" placeholder="例：富田祥之" maxlength="20">
+          </div>
+          <div class="field">
+            <label for="pAge">年齢（任意）</label>
+            <input type="number" id="pAge" inputmode="numeric" placeholder="例：64" min="0" max="120">
+          </div>
+          <button class="primary" id="addPersonBtn">登録</button>
+        </div>
+        <p class="note">複数人を登録できます。測定時に名前を選んで記録します。年齢は入れなくてもかまいません。</p>
+      </div>
+    </details>
+  </section>
+
   <!-- 入力 -->
-  <section class="card input">
-    <h2>記録を追加</h2>
+  <section class="card input" id="inputCard">
+    <div class="edit-banner">
+      <span id="editLabel">記録を修正しています</span>
+      <button id="cancelEditBtn">修正をやめる</button>
+    </div>
+    <h2 id="inputTitle">記録を追加</h2>
     <div class="grid">
+      <div class="field">
+        <label for="who">測定者</label>
+        <select id="who"></select>
+      </div>
       <div class="field">
         <label for="dt">測定日時</label>
         <input type="datetime-local" id="dt">
@@ -117,7 +180,7 @@
           <span class="unit">拍／分</span>
         </div>
       </div>
-      <div class="field">
+      <div class="field full">
         <label for="memo">メモ</label>
         <input type="text" id="memo" placeholder="例：起床後・服薬前など">
       </div>
@@ -134,31 +197,103 @@
     <div class="toolbar">
       <div class="stats" id="stats"></div>
       <div class="actions btns" style="margin:0">
+        <button class="ghost mini" id="noticeBtn">⚠ 注意点</button>
         <button class="ghost mini" id="csvBtn">CSV出力</button>
         <button class="ghost mini" id="printBtn">印刷 / PDF</button>
+        <button class="ghost mini" id="backupBtn">バックアップ保存</button>
+        <button class="primary mini" id="restoreBtn">バックアップ復元</button>
+        <input type="file" id="restoreFile" accept=".json,.csv,text/csv,application/json" hidden>
       </div>
     </div>
     <div class="table-scroll">
       <table>
         <thead>
           <tr>
-            <th>測定日時</th><th>血圧</th><th>判定</th><th>脈拍</th><th>メモ</th><th></th>
+            <th>測定者</th><th>測定日時</th><th>血圧</th><th>判定</th><th>脈拍</th><th>メモ</th><th></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
     <p class="note">判定の目安：正常＝上&lt;130かつ下&lt;80／注意＝上130-139または下80-89／高め＝上140以上または下90以上（家庭血圧の一般的な目安。診断は医師にご相談ください）</p>
+    <p class="note">記録はこの端末内に保存されます。万一に備え、ときどき「バックアップ保存」でファイルを手元に残しておくと安心です。別の端末やブラウザに移すときは、そのファイルを「バックアップ復元」から読み込めます。</p>
   </section>
+</div>
+
+<!-- 注意点モーダル -->
+<div class="modal-bg" id="noticeModal">
+  <div class="modal">
+    <h3>⚠ 記録を使う前に知っておくこと</h3>
+    <ul>
+      <li><b>端末ごとに記録は別々です。</b>スマホで記録したものはスマホの中だけ、パソコンで記録したものはパソコンの中だけに保存されます。両方で入力すると記録が2か所に分かれてしまい、合算されません。ふだんは片方の端末に決めて記録するのがおすすめです。</li>
+      <li><b>ブラウザを変えても別々になります。</b>同じパソコンでも、SafariとChromeなど別のブラウザで開くと記録は共有されません。</li>
+      <li><b>端末をまたぎたいときはバックアップで移します。</b>「バックアップ保存」でファイルを書き出し、もう一方の端末の「バックアップ復元」で読み込めば、記録を合わせられます。</li>
+      <li><b>履歴やサイトデータの削除に注意。</b>ブラウザの「閲覧データを消去」でサイトデータまで消すと、記録も消えます。ときどきバックアップを残しておくと安心です。</li>
+      <li><b>この判定は目安です。</b>正常・注意・高めの表示は家庭血圧の一般的な目安で、診断ではありません。気になる値が続くときは医師にご相談ください。</li>
+    </ul>
+    <div class="close-row">
+      <button class="primary" id="noticeClose">閉じる</button>
+    </div>
+  </div>
 </div>
 
 <script>
 const KEY='bp_records_tomita_v1';
+const PKEY='bp_people_tomita_v1';
 const $=id=>document.getElementById(id);
 let records=load();
+let people=loadPeople();
+let editingId=null;   // 修正中の記録ID（nullなら新規追加）
 
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||[];}catch(e){return[];}}
 function save(){localStorage.setItem(KEY,JSON.stringify(records));}
+function loadPeople(){try{return JSON.parse(localStorage.getItem(PKEY))||[];}catch(e){return[];}}
+function savePeople(){localStorage.setItem(PKEY,JSON.stringify(people));}
+
+/* ===== 測定者の登録 ===== */
+function personLabel(p){return p.age!==null&&p.age!==''?`${p.name}（${p.age}歳）`:p.name;}
+function addPerson(){
+  const name=$('pName').value.trim();
+  const ageRaw=$('pAge').value.trim();
+  if(!name){alert('お名前を入力してください。');return;}
+  const age=ageRaw===''?null:+ageRaw;
+  if(people.some(p=>p.name===name)){alert('同じ名前がすでに登録されています。');return;}
+  people.push({id:Date.now(),name,age});
+  savePeople();
+  $('pName').value='';$('pAge').value='';
+  renderPeople();renderWhoSelect();updateHeader();
+}
+function removePerson(id){
+  const p=people.find(x=>x.id===id);if(!p)return;
+  if(!confirm(`「${p.name}」を登録から外しますか？\n（これまでの記録はそのまま残ります）`))return;
+  people=people.filter(x=>x.id!==id);savePeople();
+  renderPeople();renderWhoSelect();updateHeader();
+}
+function renderPeople(){
+  const box=$('peopleList');
+  if(!people.length){box.innerHTML='<p class="note" style="margin:0">まだ測定者が登録されていません。下の欄から登録してください。</p>';return;}
+  box.innerHTML=people.map(p=>`
+    <div class="person-item">
+      <span class="pname">${escapeHtml(p.name)}</span>
+      <span class="page">${p.age!==null&&p.age!==''?p.age+'歳':'年齢未設定'}</span>
+      <button class="del" onclick="removePerson(${p.id})">削除</button>
+    </div>`).join('');
+}
+function renderWhoSelect(){
+  const sel=$('who');
+  const prev=sel.value;
+  if(!people.length){
+    sel.innerHTML='<option value="">（先に測定者を登録してください）</option>';
+    return;
+  }
+  sel.innerHTML=people.map(p=>`<option value="${escapeHtml(p.name)}">${escapeHtml(personLabel(p))}</option>`).join('');
+  if(prev&&people.some(p=>p.name===prev))sel.value=prev;
+}
+function updateHeader(){
+  const el=$('headerWho');
+  if(!people.length){el.textContent='測定者を登録してください';return;}
+  el.textContent='測定者：'+people.map(personLabel).join('・');
+}
 
 function nowLocal(){
   const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
@@ -179,17 +314,54 @@ function fmt(iso){
 }
 
 function add(){
+  const who=$('who').value;
   const dt=$('dt').value, sys=+$('sys').value, dia=+$('dia').value,
         pulse=$('pulse').value?+$('pulse').value:null, memo=$('memo').value.trim();
+  if(people.length&&!who){alert('測定者を選んでください。');return;}
   if(!dt){alert('測定日時を入力してください。');return;}
   if(!sys||!dia){alert('血圧（上・下）を入力してください。');return;}
-  records.push({id:Date.now(),dt,sys,dia,pulse,memo});
+
+  if(editingId!==null){
+    const r=records.find(x=>x.id===editingId);
+    if(r){r.who=who;r.dt=dt;r.sys=sys;r.dia=dia;r.pulse=pulse;r.memo=memo;}
+    endEdit();
+  }else{
+    records.push({id:Date.now(),who,dt,sys,dia,pulse,memo});
+  }
   save();render();
   $('sys').value='';$('dia').value='';$('pulse').value='';$('memo').value='';
   setNow();
 }
+
+/* 修正を開始：入力欄に記録を読み込む */
+function startEdit(id){
+  const r=records.find(x=>x.id===id);if(!r)return;
+  editingId=id;
+  if(r.who&&people.some(p=>p.name===r.who))$('who').value=r.who;
+  $('dt').value=r.dt;
+  $('sys').value=r.sys;$('dia').value=r.dia;
+  $('pulse').value=r.pulse??'';$('memo').value=r.memo??'';
+  $('inputCard').classList.add('editing');
+  $('inputTitle').textContent='記録を修正';
+  $('addBtn').textContent='修正を保存';
+  $('editLabel').textContent=`${fmt(r.dt)} の記録を修正しています`;
+  $('inputCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function endEdit(){
+  editingId=null;
+  $('inputCard').classList.remove('editing');
+  $('inputTitle').textContent='記録を追加';
+  $('addBtn').textContent='記録する';
+}
+function cancelEdit(){
+  endEdit();
+  $('sys').value='';$('dia').value='';$('pulse').value='';$('memo').value='';
+  setNow();
+}
+
 function del(id){
   if(!confirm('この記録を削除しますか？'))return;
+  if(editingId===id)endEdit();
   records=records.filter(r=>r.id!==id);save();render();
 }
 
@@ -197,18 +369,22 @@ function render(){
   const sorted=[...records].sort((a,b)=>new Date(b.dt)-new Date(a.dt));
   const tb=$('tbody');
   if(!sorted.length){
-    tb.innerHTML='<tr><td colspan="6" class="empty">まだ記録がありません。上のフォームから追加してください。</td></tr>';
+    tb.innerHTML='<tr><td colspan="7" class="empty">まだ記録がありません。上のフォームから追加してください。</td></tr>';
     $('stats').innerHTML='';return;
   }
   tb.innerHTML=sorted.map(r=>{
     const j=judge(r.sys,r.dia);
     return `<tr>
+      <td class="who-cell">${escapeHtml(r.who||'—')}</td>
       <td>${fmt(r.dt)}</td>
       <td><b>${r.sys}</b> / ${r.dia}</td>
       <td><span class="tag ${j.cls}">${j.label}</span></td>
       <td>${r.pulse??'—'}</td>
       <td class="memo">${escapeHtml(r.memo||'')}</td>
-      <td><button class="del" onclick="del(${r.id})">削除</button></td>
+      <td><div class="row-act">
+        <button class="edit" onclick="startEdit(${r.id})">修正</button>
+        <button class="del" onclick="del(${r.id})">削除</button>
+      </div></td>
     </tr>`;
   }).join('');
   // 統計
@@ -227,10 +403,10 @@ function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','
 function exportCsv(){
   if(!records.length){alert('記録がありません。');return;}
   const sorted=[...records].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
-  const head=['測定日時','血圧(上)','血圧(下)','脈拍','判定','メモ'];
+  const head=['測定者','測定日時','血圧(上)','血圧(下)','脈拍','判定','メモ'];
   const rows=sorted.map(r=>{
     const j=judge(r.sys,r.dia);
-    return [fmt(r.dt),r.sys,r.dia,r.pulse??'',j.label,r.memo??''].map(csvCell).join(',');
+    return [r.who??'',fmt(r.dt),r.sys,r.dia,r.pulse??'',j.label,r.memo??''].map(csvCell).join(',');
   });
   const csv='\uFEFF'+[head.join(','),...rows].join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
@@ -241,13 +417,146 @@ function exportCsv(){
 }
 function csvCell(v){v=String(v);return /[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 
+/* ===== バックアップ（JSON形式で丸ごと保存） ===== */
+function exportBackup(){
+  if(!records.length){alert('記録がありません。');return;}
+  const data={app:'bp-record',version:1,exportedAt:new Date().toISOString(),records};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='血圧記録_バックアップ_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+}
+
+/* ===== 復元（JSON / CSV どちらでも読み込み、重複を除いてマージ） ===== */
+function handleRestore(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    let incoming=[];
+    try{
+      incoming = file.name.toLowerCase().endsWith('.csv')
+        ? parseCsv(reader.result)
+        : parseJson(reader.result);
+    }catch(e){
+      alert('ファイルを読み込めませんでした。バックアップ用のJSONか、このアプリで出力したCSVを選んでください。');
+      return;
+    }
+    if(!incoming.length){alert('読み込めるデータが見つかりませんでした。');return;}
+    const {added,skipped}=mergeRecords(incoming);
+    save();render();
+    alert(`復元しました。\n追加：${added}件 ／ 重複でスキップ：${skipped}件`);
+  };
+  reader.readAsText(file);
+}
+
+function parseJson(text){
+  const obj=JSON.parse(text);
+  const arr=Array.isArray(obj)?obj:obj.records;
+  if(!Array.isArray(arr))throw new Error('bad json');
+  return arr.map(r=>({
+    who:r.who?String(r.who):'',
+    dt:String(r.dt),sys:+r.sys,dia:+r.dia,
+    pulse:(r.pulse===null||r.pulse===''||r.pulse===undefined)?null:+r.pulse,
+    memo:r.memo?String(r.memo):''
+  })).filter(r=>r.dt&&r.sys&&r.dia);
+}
+
+/* CSVを読む。新形式（測定者,日時,上,下,脈拍,判定,メモ）と旧形式（日時,上,下,脈拍,判定,メモ）の両対応 */
+function parseCsv(text){
+  text=text.replace(/^\uFEFF/,'');
+  const rows=csvToRows(text);
+  if(!rows.length)return [];
+  const header=rows[0].map(s=>String(s));
+  const hasHeader=/測定者|日時|上|sys/i.test(header.join(''));
+  // 測定者列があるか判定：ヘッダの1列目が「測定者」、または1列目が日時に見えない
+  const whoCol=hasHeader ? /測定者/.test(header[0]) : !!toIso(rows[0][0])===false;
+  const start=hasHeader?1:0;
+  const out=[];
+  for(let i=start;i<rows.length;i++){
+    const c=rows[i];if(!c)continue;
+    let who='',off=0;
+    if(whoCol){who=c[0]||'';off=1;}
+    const dt=toIso(c[off]); const sys=+c[off+1]; const dia=+c[off+2];
+    if(!dt||!sys||!dia)continue;
+    const pRaw=c[off+3];
+    const pulse=(pRaw===''||pRaw===undefined)?null:+pRaw;
+    const memo=c[off+5]!==undefined?c[off+5]:(c[off+4]||'');
+    out.push({who,dt,sys,dia,pulse:isNaN(pulse)?null:pulse,memo});
+  }
+  return out;
+}
+/* 「2025/07/17（木）08:30」→ ISO。ISO文字列やその他もDateで拾う */
+function toIso(s){
+  s=String(s).trim();
+  const m=s.match(/(\d{4})\/(\d{1,2})\/(\d{1,2}).*?(\d{1,2}):(\d{2})/);
+  if(m){const[_,y,mo,d,h,mi]=m;const dt=new Date(y,mo-1,d,h,mi);return isNaN(dt)?'':toLocalIso(dt);}
+  const d2=new Date(s);return isNaN(d2)?'':toLocalIso(d2);
+}
+function toLocalIso(d){const x=new Date(d);x.setMinutes(x.getMinutes()-x.getTimezoneOffset());return x.toISOString().slice(0,16);}
+function csvToRows(text){
+  const rows=[];let row=[],cell='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'){if(text[i+1]==='"'){cell+='"';i++;}else q=false;}else cell+=ch;}
+    else{
+      if(ch==='"')q=true;
+      else if(ch===',')  {row.push(cell);cell='';}
+      else if(ch==='\n'){row.push(cell);rows.push(row);row=[];cell='';}
+      else if(ch==='\r'){}
+      else cell+=ch;
+    }
+  }
+  if(cell!==''||row.length){row.push(cell);rows.push(row);}
+  return rows.filter(r=>r.some(c=>c!==''));
+}
+/* 測定者＋日時＋上＋下 が同じものは重複とみなしてスキップ */
+function mergeRecords(incoming){
+  const key=r=>(r.who||'')+'|'+r.dt+'|'+r.sys+'|'+r.dia;
+  const seen=new Set(records.map(key));
+  let added=0,skipped=0;
+  incoming.forEach(r=>{
+    if(seen.has(key(r))){skipped++;return;}
+    seen.add(key(r));
+    records.push({id:Date.now()+Math.floor(Math.random()*100000),who:r.who||'',dt:r.dt,sys:r.sys,dia:r.dia,pulse:r.pulse,memo:r.memo});
+    added++;
+  });
+  // 記録に含まれるが未登録の測定者を自動で登録
+  let addedPeople=false;
+  incoming.forEach(r=>{
+    const nm=(r.who||'').trim();
+    if(nm&&!people.some(p=>p.name===nm)){
+      people.push({id:Date.now()+Math.floor(Math.random()*100000),name:nm,age:null});
+      addedPeople=true;
+    }
+  });
+  if(addedPeople){savePeople();renderPeople();renderWhoSelect();updateHeader();}
+  return {added,skipped};
+}
+
 $('addBtn').onclick=add;
 $('nowBtn').onclick=setNow;
+$('cancelEditBtn').onclick=cancelEdit;
+$('addPersonBtn').onclick=addPerson;
 $('csvBtn').onclick=exportCsv;
 $('printBtn').onclick=()=>window.print();
+$('backupBtn').onclick=exportBackup;
+$('restoreBtn').onclick=()=>$('restoreFile').click();
+$('restoreFile').onchange=e=>{const f=e.target.files[0];if(f)handleRestore(f);e.target.value='';};
+// 注意点モーダル
+$('noticeBtn').onclick=()=>$('noticeModal').classList.add('open');
+$('noticeClose').onclick=()=>$('noticeModal').classList.remove('open');
+$('noticeModal').onclick=e=>{if(e.target===$('noticeModal'))$('noticeModal').classList.remove('open');};
+// Enterで記録／保存
 [$('sys'),$('dia'),$('pulse'),$('memo')].forEach(el=>el.addEventListener('keydown',e=>{if(e.key==='Enter')add();}));
+$('pName').addEventListener('keydown',e=>{if(e.key==='Enter')addPerson();});
+$('pAge').addEventListener('keydown',e=>{if(e.key==='Enter')addPerson();});
 
-setNow();render();
+// 初期化
+renderPeople();
+renderWhoSelect();
+updateHeader();
+if(!people.length)$('settings').open=true;   // 未登録なら設定を開いておく
+setNow();
+render();
 </script>
 </body>
 </html>
