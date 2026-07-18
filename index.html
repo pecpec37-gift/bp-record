@@ -201,7 +201,7 @@
         <button class="ghost mini" id="csvBtn">CSV出力</button>
         <button class="ghost mini" id="printBtn">印刷 / PDF</button>
         <button class="ghost mini" id="backupBtn">バックアップ保存</button>
-        <button class="primary mini" id="restoreBtn">バックアップ復元</button>
+        <button class="ghost mini" id="restoreBtn">バックアップ復元</button>
         <input type="file" id="restoreFile" accept=".json,.csv,text/csv,application/json" hidden>
       </div>
     </div>
@@ -460,6 +460,57 @@ function exportBackup(){
     JSON.stringify(data,null,2), 'application/json');
 }
 
+/* ===== 印刷 / PDF ===== 印刷用の整ったページを新しいタブで開いて印刷 */
+function printRecords(){
+  if(!records.length){alert('記録がありません。');return;}
+  const sorted=[...records].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
+  const rows=sorted.map(r=>{
+    const j=judge(r.sys,r.dia);
+    return `<tr>
+      <td>${escapeHtml(r.who||'—')}</td>
+      <td style="text-align:left">${fmt(r.dt)}</td>
+      <td><b>${r.sys}</b> / ${r.dia}</td>
+      <td>${j.label}</td>
+      <td>${r.pulse??'—'}</td>
+      <td style="text-align:left">${escapeHtml(r.memo||'')}</td>
+    </tr>`;
+  }).join('');
+  const today=fmt(nowLocal());
+  const html=`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>血圧記録</title><style>
+  body{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;color:#1c2733;margin:24px;}
+  h1{font-size:1.3rem;margin:0 0 4px;}
+  .sub{color:#667;font-size:.85rem;margin-bottom:16px;}
+  table{width:100%;border-collapse:collapse;font-size:.9rem;}
+  th,td{border:1px solid #ccc;padding:6px 8px;text-align:center;}
+  th{background:#eef4f2;}
+  .btnbar{margin-bottom:16px;}
+  button{font:inherit;padding:10px 18px;border:none;border-radius:8px;background:#2f6d63;color:#fff;font-weight:600;cursor:pointer;}
+  .hint{color:#667;font-size:.82rem;margin-top:6px;}
+  @media print{.btnbar{display:none;}body{margin:0;}}
+</style></head><body>
+  <div class="btnbar">
+    <button onclick="window.print()">この画面を印刷 / PDF保存</button>
+    <div class="hint">iPhoneでPDFにするには、印刷画面でプレビューを長押し、または共有ボタンから「"ファイル"に保存」を選びます。</div>
+  </div>
+  <h1>血圧記録</h1>
+  <div class="sub">出力日：${today}　／　全${records.length}件</div>
+  <table>
+    <thead><tr><th>測定者</th><th>測定日時</th><th>血圧</th><th>判定</th><th>脈拍</th><th>メモ</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body></html>`;
+  const w=window.open('','_blank');
+  if(!w){
+    alert('印刷用の画面を開けませんでした。ポップアップがブロックされている可能性があります。\nブラウザの設定でこのサイトのポップアップを許可してから、もう一度お試しください。');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 /* ===== 復元（JSON / CSV どちらでも読み込み、重複を除いてマージ） ===== */
 function handleRestore(file){
   const reader=new FileReader();
@@ -569,7 +620,7 @@ $('nowBtn').onclick=setNow;
 $('cancelEditBtn').onclick=cancelEdit;
 $('addPersonBtn').onclick=addPerson;
 $('csvBtn').onclick=exportCsv;
-$('printBtn').onclick=()=>window.print();
+$('printBtn').onclick=printRecords;
 $('backupBtn').onclick=exportBackup;
 $('restoreBtn').onclick=()=>$('restoreFile').click();
 $('restoreFile').onchange=e=>{const f=e.target.files[0];if(f)handleRestore(f);e.target.value='';};
