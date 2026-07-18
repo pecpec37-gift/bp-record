@@ -228,6 +228,7 @@
       <li><b>端末ごとに記録は別々です。</b>スマホで記録したものはスマホの中だけ、パソコンで記録したものはパソコンの中だけに保存されます。両方で入力すると記録が2か所に分かれてしまい、合算されません。ふだんは片方の端末に決めて記録するのがおすすめです。</li>
       <li><b>ブラウザを変えても別々になります。</b>同じパソコンでも、SafariとChromeなど別のブラウザで開くと記録は共有されません。</li>
       <li><b>端末をまたぎたいときはバックアップで移します。</b>「バックアップ保存」でファイルを書き出し、もう一方の端末の「バックアップ復元」で読み込めば、記録を合わせられます。</li>
+      <li><b>iPhoneで保存するとき。</b>「バックアップ保存」や「CSV出力」を押すと共有メニューが開きます。「"ファイル"に保存」を選ぶと、ファイルアプリの中に保存されます。うまく開かないときは新しいタブで内容が表示されるので、共有ボタン（□に上矢印）から保存してください。</li>
       <li><b>履歴やサイトデータの削除に注意。</b>ブラウザの「閲覧データを消去」でサイトデータまで消すと、記録も消えます。ときどきバックアップを残しておくと安心です。</li>
       <li><b>この判定は目安です。</b>正常・注意・高めの表示は家庭血圧の一般的な目安で、診断ではありません。気になる値が続くときは医師にご相談ください。</li>
     </ul>
@@ -400,6 +401,44 @@ function render(){
 }
 function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
+/* ===== 端末を問わず保存できる共通関数 =====
+   PC/Android：通常ダウンロード
+   iPhone等：共有シート（あれば）→ 無理なら新規タブで開いて手動保存 */
+async function saveFile(filename, text, mime){
+  const blob=new Blob([text],{type:mime});
+  const file=new File([blob],filename,{type:mime});
+  // 1) 共有シート（iPhoneのSafariで有効）
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:filename}); return; }
+    catch(e){ if(e&&e.name==='AbortError')return; /* ユーザーが閉じただけ */ }
+  }
+  // 2) 通常のダウンロード
+  try{
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    // iOSはdownloadを無視することがあるので、保存できたか確かめてもらう
+    if(isIOS()) setTimeout(()=>openInNewTab(blob,filename,mime),400);
+  }catch(e){
+    openInNewTab(blob,filename,mime);
+  }
+}
+function isIOS(){
+  return /iP(hone|ad|od)/.test(navigator.userAgent) ||
+    (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1); // iPadOS
+}
+/* 保存できないときの最終手段：内容を新しいタブで開く。長押し→共有で保存できる */
+function openInNewTab(blob,filename,mime){
+  const url=URL.createObjectURL(blob);
+  const w=window.open(url,'_blank');
+  if(!w){
+    alert('保存画面を開けませんでした。ポップアップがブロックされている可能性があります。\nブラウザの設定でこのサイトのポップアップを許可してから、もう一度お試しください。');
+  }
+  setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+
 function exportCsv(){
   if(!records.length){alert('記録がありません。');return;}
   const sorted=[...records].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
@@ -409,11 +448,7 @@ function exportCsv(){
     return [r.who??'',fmt(r.dt),r.sys,r.dia,r.pulse??'',j.label,r.memo??''].map(csvCell).join(',');
   });
   const csv='\uFEFF'+[head.join(','),...rows].join('\r\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='血圧記録_'+new Date().toISOString().slice(0,10)+'.csv';
-  a.click();
+  saveFile('血圧記録_'+new Date().toISOString().slice(0,10)+'.csv', csv, 'text/csv;charset=utf-8;');
 }
 function csvCell(v){v=String(v);return /[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 
@@ -421,11 +456,8 @@ function csvCell(v){v=String(v);return /[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""
 function exportBackup(){
   if(!records.length){alert('記録がありません。');return;}
   const data={app:'bp-record',version:1,exportedAt:new Date().toISOString(),records};
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='血圧記録_バックアップ_'+new Date().toISOString().slice(0,10)+'.json';
-  a.click();
+  saveFile('血圧記録_バックアップ_'+new Date().toISOString().slice(0,10)+'.json',
+    JSON.stringify(data,null,2), 'application/json');
 }
 
 /* ===== 復元（JSON / CSV どちらでも読み込み、重複を除いてマージ） ===== */
